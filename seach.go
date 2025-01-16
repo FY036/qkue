@@ -15,10 +15,10 @@ import (
 	"strings"
 )
 
+// 结构
 type Config struct {
 	APIKey string `yaml:"apikey"`
 }
-
 type RequestBody struct {
 	Include     []string `json:"include"`
 	Size        int      `json:"size"`
@@ -28,17 +28,22 @@ type RequestBody struct {
 	Shortcuts   []string `json:"shortcuts"`
 	Latest      string   `json:"latest"`
 }
-
 type Pagination struct {
 	Total int `json:"total"`
 }
-
 type Meta struct {
 	Pagination Pagination `json:"pagination"`
 }
-
 type Response struct {
 	Meta Meta `json:"meta"`
+}
+type UserInfo struct {
+    Data struct {
+        User struct {
+            FullName string `json:"fullname"` // 用户的全名
+        } `json:"user"`
+        MonthRemainingCredit int `json:"month_remaining_credit"` // 剩余的月度积分
+    } `json:"data"`
 }
 
 // 发送请求函数
@@ -95,20 +100,30 @@ func sendRequest(key string, size int, sentence string, aaa, bbb, ccc, ddd bool)
 	return string(body), nil
 }
 
-func main() {
-	logo := "\033[32m" + `	  _              ______ 
-         | |            |  ____|
-   __ _  | | __  _   _  | |__   
-  / _' | | |/ / | | | | |  __|  
- | (_| | |   <  | |_| | | |____ 
-  \__, | |_|\_\  \__,_| |______|
-     | |                        
-     |_|               
-	   ` + "\033[0m" + `    (qkuE)::url导出 ` + "\033[32m" + "by: FY" + "\033[0m" + `
+// 打印积分
+func GetUserInfo(key string) (string, int, error) {
+    client := &http.Client{}
+    req, _ := http.NewRequest("GET", "https://quake.360.net/api/v3/user/info", nil)
+    req.Header.Set("Host", "quake.360.net")
+    req.Header.Set("X-QuakeToken", key)
+    resp, err := client.Do(req)
+    if err != nil {
+        return "", 0, fmt.Errorf("发送请求时出错: %v", err)
+    }
+    defer resp.Body.Close()
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        return "", 0, fmt.Errorf("读取响应体时出错: %v", err)
+    }
+    var userInfo UserInfo
+    err = json.Unmarshal(body, &userInfo)
+    if err != nil {
+        return "", 0, fmt.Errorf("解析JSON时出错: %v", err)
+    }
+    return userInfo.Data.User.FullName, userInfo.Data.MonthRemainingCredit, nil
+}
 
--a(最新数据) | -b(过滤无效请求) | -c(排除蜜罐) | -d(排除CDN)
-`
-	fmt.Print(logo)
+func main() {
 	// 解析yaml文件
 	aaa := flag.Bool("a", false, "")
 	bbb := flag.Bool("b", false, "")
@@ -129,9 +144,22 @@ func main() {
 		fmt.Println("\033[31m[-]\033[0m 无法解析yaml:", err)
 		return
 	}
-	reader := bufio.NewReader(os.Stdin)
+	name,credit, _:= GetUserInfo(config.APIKey)
+	logo := "\033[32m" + `	  _              ______ 
+         | |            |  ____|
+   __ _  | | __  _   _  | |__   
+  / _' | | |/ / | | | | |  __|  
+ | (_| | |   <  | |_| | | |____ 
+  \__, | |_|\_\  \__,_| |______|
+     | |                        
+     |_|               
+	   ` + "\033[0m" + `    (qkuE)::url导出 ` + "\033[32m" + name + ":" + strconv.Itoa(credit) + "\033[0m" + `
 
+-a(最新数据) | -b(过滤无效请求) | -c(排除蜜罐) | -d(排除CDN)
+`
+	fmt.Print(logo)
 	// 发送请求并获取总数
+	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("\n\033[36m[!]\u001B[0m 请输入查询语句:\n")
 	Sentence, _ := reader.ReadString('\n')
 	Sentence = strings.TrimSpace(Sentence)
@@ -150,12 +178,12 @@ func main() {
 
 	total := responseData.Meta.Pagination.Total
 	fmt.Printf("\n\033[32m[+]\u001B[0m 查询结果的总条数为: %d\n", total)
-	fmt.Print("\n\033[36m[!]\u001B[0m 请输入导出的条数(默认10000): ")
+	fmt.Print("\n\033[36m[!]\u001B[0m 请输入导出的条数(上限1w): ")
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	sum, err := strconv.Atoi(input)
 	if err != nil {
-		sum = 10000 // 默认值
+		sum = total // 默认值
 	}
 	// 发送请求并获取响应
 	response, err = sendRequest(config.APIKey, sum, Sentence, *aaa, *bbb, *ccc, *ddd)
