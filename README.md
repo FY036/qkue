@@ -31,4 +31,4 @@ go build .
 
 如有问题请发lssues
 
-给个star呗❤
+不要吝啬你的star❤
